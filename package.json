@@ -1,0 +1,23 @@
+{
+  "name": "codex-cli-runner",
+  "version": "1.0.0",
+  "description": "A simple express project as bridge of n8n command to pass task to codex-cli safely",
+  "homepage": "https://github.com/anggadb/codex-cli-runner#readme",
+  "bugs": {
+    "url": "https://github.com/anggadb/codex-cli-runner/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anggadb/codex-cli-runner.git"
+  },
+  "license": "ISC",
+  "author": "angga bachtiar",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}
