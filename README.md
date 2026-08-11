@@ -36,12 +36,21 @@ cd codex-cli-runner
 npm install
 ```
 
-Edit the `projects` object in `index.js` so every public alias points to a directory Codex is allowed to modify:
+Edit the `projects` object in `index.js` so every public alias points to an absolute directory that Codex is allowed to modify. For example, on Windows:
 
 ```js
 const projects = {
-  "resume-web": "D:\\Projects\\resume-web",
-  "backend": "D:\\Projects\\backend-api",
+  "my-website": "C:\\path\\to\\my-website",
+  "my-api": "C:\\path\\to\\my-api",
+};
+```
+
+On macOS or Linux, use absolute POSIX paths instead:
+
+```js
+const projects = {
+  "my-website": "/path/to/my-website",
+  "my-api": "/path/to/my-api",
 };
 ```
 
@@ -61,7 +70,7 @@ Request body:
 
 ```json
 {
-  "project": "resume-web",
+  "project": "my-website",
   "task": "Add a print-friendly stylesheet and verify the existing build"
 }
 ```
@@ -71,7 +80,7 @@ Example request with curl:
 ```powershell
 curl.exe -X POST http://127.0.0.1:3001/codex `
   -H "Content-Type: application/json" `
-  -d '{"project":"resume-web","task":"Add a print-friendly stylesheet"}'
+  -d '{"project":"my-website","task":"Add a print-friendly stylesheet"}'
 ```
 
 Example successful response:
@@ -80,7 +89,7 @@ Example successful response:
 {
   "success": true,
   "exitCode": 0,
-  "project": "resume-web",
+  "project": "my-website",
   "output": "...Codex output...",
   "error": ""
 }
@@ -113,7 +122,7 @@ Use an **HTTP Request** node with:
 
 ```json
 {
-  "project": "resume-web",
+  "project": "my-website",
   "task": "={{ $json.task }}"
 }
 ```

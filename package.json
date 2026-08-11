@@ -1,7 +1,7 @@
 {
   "name": "codex-cli-runner",
   "version": "1.0.0",
-  "description": "A simple express project as bridge of n8n command to pass task to codex-cli safely",
+  "description": "A local Express bridge for safely submitting n8n automation tasks to the Codex CLI",
   "homepage": "https://github.com/anggadb/codex-cli-runner#readme",
   "bugs": {
     "url": "https://github.com/anggadb/codex-cli-runner/issues"
