@@ -5,6 +5,17 @@ const projects = {
   "resume-web": "D:\\Projects\\your-folder-path",
 };
 
+function getProjectMap(value = process.env.PROJECTS_JSON) {
+  if (!value) return projects;
+
+  const projectMap = JSON.parse(value);
+  if (!projectMap || Array.isArray(projectMap) || typeof projectMap !== "object") {
+    throw new TypeError("PROJECTS_JSON must be a JSON object");
+  }
+
+  return projectMap;
+}
+
 function createApp({ projectMap = projects, spawnProcess = spawn } = {}) {
   const app = express();
   app.use(express.json());
@@ -65,9 +76,12 @@ function createApp({ projectMap = projects, spawnProcess = spawn } = {}) {
 }
 
 if (require.main === module) {
-  createApp().listen(3001, "127.0.0.1", () => {
-    console.log("Codex runner listening on http://127.0.0.1:3001");
+  const host = process.env.HOST || "127.0.0.1";
+  const port = Number(process.env.PORT || 3001);
+
+  createApp({ projectMap: getProjectMap() }).listen(port, host, () => {
+    console.log(`Codex runner listening on http://${host}:${port}`);
   });
 }
 
-module.exports = { createApp };
+module.exports = { createApp, getProjectMap };

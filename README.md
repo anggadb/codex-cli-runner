@@ -62,6 +62,34 @@ node index.js
 
 The API listens on `http://127.0.0.1:3001`. Binding to `127.0.0.1` keeps it accessible only from the local machine.
 
+## Docker
+
+Copy the example environment file and edit its host paths:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+- `PROJECT_PATH` is the host project directory exposed to Codex.
+- `CODEX_HOME_PATH` is the host Codex configuration directory containing your existing authentication.
+- `PROJECTS_JSON` maps API aliases to paths inside the container. Its paths must match the volume targets in `compose.yaml`.
+- `PORT` controls the host port; Compose publishes it on `127.0.0.1` only.
+
+Build and start the service:
+
+```powershell
+docker compose up --build -d
+docker compose logs -f codex-runner
+```
+
+Confirm that Codex is installed inside the container:
+
+```powershell
+docker compose exec codex-runner codex --version
+```
+
+Stop the service with `docker compose down`. To allow more projects, add a volume for each host directory and add its container path to `PROJECTS_JSON`.
+
 ## API
 
 ### `POST /codex`

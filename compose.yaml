@@ -1,0 +1,11 @@
+services:
+  codex-runner:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PORT:-3001}:3001"
+    environment:
+      PROJECTS_JSON: '${PROJECTS_JSON:?Set PROJECTS_JSON in .env}'
+    volumes:
+      - ${CODEX_HOME_PATH:-./.codex-data}:/home/node/.codex
+      - ${PROJECT_PATH:-./workspace}:/workspaces/my-project

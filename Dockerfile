@@ -1,0 +1,19 @@
+FROM node:22-slim
+
+RUN npm install --global @openai/codex
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY --chown=node:node index.js ./
+
+ENV HOST=0.0.0.0 \
+    PORT=3001
+
+USER node
+
+EXPOSE 3001
+
+CMD ["npm", "start"]

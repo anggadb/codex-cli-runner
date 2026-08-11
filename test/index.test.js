@@ -3,9 +3,22 @@ const { EventEmitter } = require("node:events");
 const { PassThrough } = require("node:stream");
 const { test } = require("node:test");
 
-const { createApp } = require("../index");
+const { createApp, getProjectMap } = require("../index");
 
 const projectMap = { demo: "D:\\Projects\\demo" };
+
+test("reads a project allowlist from JSON", () => {
+  assert.deepEqual(getProjectMap('{"demo":"/workspaces/demo"}'), {
+    demo: "/workspaces/demo",
+  });
+});
+
+test("rejects a non-object project allowlist", () => {
+  assert.throws(() => getProjectMap("[]"), {
+    name: "TypeError",
+    message: "PROJECTS_JSON must be a JSON object",
+  });
+});
 
 function createChild({ stdout = "", stderr = "", exitCode = 0 } = {}) {
   const child = new EventEmitter();
