@@ -9,11 +9,13 @@ A small local HTTP bridge that lets tools such as [n8n](https://n8n.io/) submit 
 3. It runs `codex exec --sandbox workspace-write <task>` in that project directory.
 4. When Codex exits, the server returns its standard output, standard error, and exit code as JSON.
 
-The Codex process is invoked with `spawn()` and `shell: false`, so the submitted task is passed as a single process argument instead of being interpolated into a shell command.
+On macOS and Linux, the Codex process is invoked with `spawn()` and `shell: false`, so the submitted task is passed as a single process argument instead of being interpolated into a shell command.
+
+On Windows, the runner invokes `codex.cmd` through the Windows command processor. The task itself is sent through standard input so it is not interpolated into the shell command.
 
 ## Requirements
 
-- Node.js 18 or newer
+- Node.js 22 or newer
 - npm
 - Codex CLI installed and available as `codex` on `PATH`
 - Codex CLI authenticated and ready to run
@@ -45,6 +47,8 @@ const projects = {
 };
 ```
 
+The directory must already exist. The runner returns `Project directory not found` when an alias points to a missing path.
+
 On macOS or Linux, use absolute POSIX paths instead:
 
 ```js
@@ -57,10 +61,10 @@ const projects = {
 Start the server:
 
 ```powershell
-node index.js
+npm start
 ```
 
-The API listens on `http://127.0.0.1:3001`. Binding to `127.0.0.1` keeps it accessible only from the local machine.
+`npm start` loads `.env` when the file exists. Variables already present in the process environment take precedence. The API listens on `http://127.0.0.1:3001` by default, which keeps it accessible only from the local machine.
 
 ## Docker
 
@@ -89,6 +93,12 @@ docker compose exec codex-runner codex --version
 ```
 
 Stop the service with `docker compose down`. To allow more projects, add a volume for each host directory and add its container path to `PROJECTS_JSON`.
+
+## Execution logs
+
+Every completed Codex process writes a separate JSON file to `logs/`, including successful results, nonzero exits, and process-start errors. Each entry contains the timestamp, project alias, success status, total runtime in `durationMs`, standard output, standard error, and exit code when available.
+
+The `logs/` directory is ignored by Git. Docker Compose mounts the same host directory at `/app/logs`, so container logs persist locally without being included in the image or repository.
 
 ## API
 

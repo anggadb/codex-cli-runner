@@ -9,3 +9,4 @@ services:
     volumes:
       - ${CODEX_HOME_PATH:-./.codex-data}:/home/node/.codex
       - ${PROJECT_PATH:-./workspace}:/workspaces/my-project
+      - ./logs:/app/logs
