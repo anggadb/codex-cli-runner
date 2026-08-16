@@ -1,15 +1,70 @@
-const assert = require("node:assert/strict");
-const { EventEmitter } = require("node:events");
-const { PassThrough } = require("node:stream");
-const { test } = require("node:test");
+import assert from "node:assert/strict";
+import { test } from "node:test";
 
-const { createApp, getProjectMap } = require("../index");
+import { createApp, getProjectMap } from "../index.js";
+import { normalizeDecision } from "../src/codex/decisions.js";
 
 const projectPath = process.cwd();
 const projectMap = { demo: projectPath };
 
+function createFakeCodexServer(overrides = {}) {
+  return {
+    child: null,
+    pendingApprovals: new Map(),
+    turns: new Map(),
+    listPendingApprovals: () => [],
+    resolveApproval: async (approvalId, decision) => ({ approvalId, decision, resolved: true }),
+    runTurn: async () => ({
+      taskId: "task-1",
+      threadId: "thread-1",
+      turnId: "turn-1",
+      status: "completed",
+      output: "Task complete",
+      diff: "",
+      commands: [],
+      errors: [],
+      approvalCount: 0,
+      approvalWaitMs: 0,
+      turnError: null,
+    }),
+    ...overrides,
+  };
+}
+
 function createTestApp(options = {}) {
-  return createApp({ logResponse: async () => {}, clock: () => 0, ...options });
+  return createApp({
+    projectMap,
+    codexServer: createFakeCodexServer(),
+    logResponse: async () => {},
+    clock: () => 0,
+    ...options,
+  });
+}
+
+async function withServer(app, callback) {
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise((resolve) => server.once("listening", resolve));
+  const { port } = server.address();
+  try {
+    await callback(`http://127.0.0.1:${port}`);
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  }
+}
+
+async function request(app, pathname, { method = "GET", body, headers = {} } = {}) {
+  let result;
+  await withServer(app, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}${pathname}`, {
+      method,
+      headers: { ...(body ? { "content-type": "application/json" } : {}), ...headers },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    result = { status: response.status, body: await response.json() };
+  });
+  return result;
 }
 
 test("reads a project allowlist from JSON", () => {
@@ -25,184 +80,150 @@ test("rejects a non-object project allowlist", () => {
   });
 });
 
-function createChild({ stdout = "", stderr = "", exitCode = 0 } = {}) {
-  const child = new EventEmitter();
-  child.stdin = new PassThrough();
-  child.stdout = new PassThrough();
-  child.stderr = new PassThrough();
+test("normalizes only supported approval decisions", () => {
+  assert.equal(normalizeDecision("accept"), "accept");
+  assert.equal(normalizeDecision("acceptForSession"), "acceptForSession");
+  assert.equal(normalizeDecision("approve"), null);
+});
 
-  process.nextTick(() => {
-    child.stdout.end(stdout);
-    child.stderr.end(stderr);
-    child.emit("close", exitCode);
+test("reports app-server health", async () => {
+  const codexServer = createFakeCodexServer({
+    child: { killed: false },
+    pendingApprovals: new Map([["approval-1", {}]]),
+    turns: new Map([["turn-1", {}]]),
   });
+  const response = await request(createTestApp({ codexServer }), "/health");
 
-  return child;
-}
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, {
+    success: true,
+    codexAppServerRunning: true,
+    pendingApprovals: 1,
+    activeTurns: 1,
+  });
+});
 
-async function withServer(app, callback) {
-  const server = app.listen(0, "127.0.0.1");
-  await new Promise((resolve) => server.once("listening", resolve));
-  const { port } = server.address();
-
-  try {
-    await callback(`http://127.0.0.1:${port}`);
-  } finally {
-    await new Promise((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
-    });
-  }
-}
-
-async function post(app, body) {
-  let response;
-
-  await withServer(app, async (baseUrl) => {
-    response = await fetch(`${baseUrl}/codex`, {
+test("validates project aliases, directories, and tasks", async (t) => {
+  await t.test("unknown project", async () => {
+    const response = await request(createTestApp(), "/codex", {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+      body: { project: "unknown", task: "Do work" },
     });
-    response.bodyJson = await response.json();
+    assert.deepEqual(response, { status: 400, body: { error: "Project not allowed" } });
   });
 
-  return response;
-}
-
-test("rejects a project outside the allowlist", async () => {
-  const app = createTestApp({ projectMap, spawnProcess: assert.fail });
-  const response = await post(app, { project: "unknown", task: "Do work" });
-
-  assert.equal(response.status, 400);
-  assert.deepEqual(response.bodyJson, { error: "Project not allowed" });
-});
-
-test("rejects a missing or non-string task", async (t) => {
-  for (const task of [undefined, "", 123]) {
-    await t.test(`task: ${String(task)}`, async () => {
-      const app = createTestApp({ projectMap, spawnProcess: assert.fail });
-      const response = await post(app, { project: "demo", task });
-
-      assert.equal(response.status, 400);
-      assert.deepEqual(response.bodyJson, { error: "Task is required" });
+  await t.test("missing directory", async () => {
+    const response = await request(createTestApp({ directoryExists: () => false }), "/codex", {
+      method: "POST",
+      body: { project: "demo", task: "Do work" },
     });
-  }
-});
-
-test("rejects a missing project directory before spawning Codex", async () => {
-  const app = createTestApp({
-    projectMap,
-    spawnProcess: assert.fail,
-    directoryExists: () => false,
+    assert.deepEqual(response, {
+      status: 400,
+      body: { error: "Project directory not found", project: "demo" },
+    });
   });
-  const response = await post(app, { project: "demo", task: "Do work" });
 
-  assert.equal(response.status, 400);
-  assert.deepEqual(response.bodyJson, {
-    error: "Project directory not found",
-    project: "demo",
+  await t.test("blank task", async () => {
+    const response = await request(createTestApp(), "/codex", {
+      method: "POST",
+      body: { project: "demo", task: "   " },
+    });
+    assert.deepEqual(response, { status: 400, body: { error: "Task is required" } });
   });
 });
 
-test("runs Codex directly on non-Windows platforms", async () => {
+test("runs a Codex turn, formats timing, and logs the response", async () => {
+  const times = [1_000, 1_400];
   let invocation;
-  const times = [1_000, 1_250];
-  const spawnProcess = (...args) => {
-    invocation = args;
-    return createChild({ stdout: "Task complete" });
-  };
-  let loggedResult;
-  const app = createTestApp({
-    projectMap,
-    spawnProcess,
-    platform: "linux",
-    clock: () => times.shift(),
-    logResponse: async (result) => {
-      loggedResult = result;
+  let logged;
+  const codexServer = createFakeCodexServer({
+    runTurn: async (input) => {
+      invocation = input;
+      return {
+        taskId: "task-1",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        status: "completed",
+        output: "Done",
+        diff: "diff",
+        commands: [{ command: ["npm", "test"], status: "completed" }],
+        errors: [],
+        approvalCount: 1,
+        approvalWaitMs: 150,
+        turnError: null,
+      };
     },
   });
-  const response = await post(app, { project: "demo", task: "Update README" });
-
-  assert.equal(response.status, 200);
-  assert.deepEqual(invocation, [
-    "codex",
-    ["exec", "--sandbox", "workspace-write", "Update README"],
-    { cwd: projectPath, shell: false },
-  ]);
-  assert.deepEqual(response.bodyJson, {
-    success: true,
-    exitCode: 0,
-    project: "demo",
-    durationMs: 250,
-    output: "Task complete",
-    error: "",
+  const app = createTestApp({
+    codexServer,
+    clock: () => times.shift(),
+    logResponse: async (result) => {
+      logged = result;
+    },
   });
-  assert.deepEqual(loggedResult, response.bodyJson);
-});
-
-test("runs codex.cmd on Windows and sends the task over stdin", async () => {
-  let invocation;
-  let stdin = "";
-  const spawnProcess = (...args) => {
-    invocation = args;
-    const child = createChild({ stdout: "Task complete" });
-    child.stdin.on("data", (chunk) => {
-      stdin += chunk.toString();
-    });
-    return child;
-  };
-  const app = createTestApp({ projectMap, spawnProcess, platform: "win32" });
-  const response = await post(app, {
-    project: "demo",
-    task: "Update README & do not run this as a shell command",
+  const response = await request(app, "/codex", {
+    method: "POST",
+    body: { project: "demo", task: "  Update README  " },
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(invocation, [
-    "codex.cmd exec --sandbox workspace-write -",
-    { cwd: projectPath, shell: true },
-  ]);
-  assert.equal(stdin, "Update README & do not run this as a shell command");
-  assert.equal(response.bodyJson.success, true);
+  assert.deepEqual(invocation, { project: "demo", projectPath, task: "Update README" });
+  assert.equal(response.body.durationMs, 400);
+  assert.equal(response.body.codexActiveMs, 250);
+  assert.equal(response.body.approvalWaitMs, 150);
+  assert.deepEqual(logged, {
+    task: "Update README",
+    approvalPolicy: "on-request",
+    ...response.body,
+  });
+  assert.equal(response.body.task, undefined);
 });
 
-test("returns a server error when Codex cannot be started", async () => {
-  const spawnProcess = () => {
-    const child = new EventEmitter();
-    child.stdin = new PassThrough();
-    child.stdout = new PassThrough();
-    child.stderr = new PassThrough();
-    process.nextTick(() => {
-      child.emit("error", new Error("spawn codex ENOENT"));
-    });
-    return child;
-  };
-  const app = createTestApp({ projectMap, spawnProcess, platform: "linux" });
-  const response = await post(app, { project: "demo", task: "Do work" });
+test("logs and returns Codex turn failures", async () => {
+  let logged;
+  const codexServer = createFakeCodexServer({
+    runTurn: async () => {
+      throw new Error("Codex unavailable");
+    },
+  });
+  const response = await request(
+    createTestApp({ codexServer, logResponse: async (result) => (logged = result) }),
+    "/codex",
+    { method: "POST", body: { project: "demo", task: "Do work" } }
+  );
 
   assert.equal(response.status, 500);
-  assert.deepEqual(response.bodyJson, {
-    success: false,
-    project: "demo",
-    durationMs: 0,
-    output: "",
-    error: "Unable to start Codex: spawn codex ENOENT",
+  assert.equal(response.body.error, "Codex unavailable");
+  assert.deepEqual(logged, {
+    task: "Do work",
+    approvalPolicy: "on-request",
+    ...response.body,
   });
+  assert.equal(response.body.task, undefined);
 });
 
-test("returns stderr and a failed status for a nonzero Codex exit", async () => {
-  const spawnProcess = () =>
-    createChild({ stderr: "Codex failed", exitCode: 2 });
-  const app = createTestApp({ projectMap, spawnProcess, platform: "linux" });
-  const response = await post(app, { project: "demo", task: "Fail" });
+test("protects and resolves approval endpoints", async () => {
+  const codexServer = createFakeCodexServer({
+    listPendingApprovals: () => [{ approvalId: "approval-1" }],
+  });
+  const app = createTestApp({ codexServer, approvalSecret: "secret" });
 
-  assert.equal(response.status, 200);
-  assert.deepEqual(response.bodyJson, {
-    success: false,
-    exitCode: 2,
-    project: "demo",
-    durationMs: 0,
-    output: "",
-    error: "Codex failed",
+  const unauthorized = await request(app, "/approvals");
+  assert.equal(unauthorized.status, 401);
+
+  const listed = await request(app, "/approvals", {
+    headers: { "X-Approval-Secret": "secret" },
+  });
+  assert.deepEqual(listed.body, { approvals: [{ approvalId: "approval-1" }] });
+
+  const resolved = await request(app, "/approvals/approval-1", {
+    method: "POST",
+    headers: { "X-Approval-Secret": "secret" },
+    body: { decision: "accept" },
+  });
+  assert.deepEqual(resolved.body, {
+    approvalId: "approval-1",
+    decision: "accept",
+    resolved: true,
   });
 });

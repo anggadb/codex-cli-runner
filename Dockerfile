@@ -1,4 +1,4 @@
-FROM node:22-slim
+FROM node:24-slim
 
 RUN npm install --global @openai/codex
 
@@ -8,6 +8,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --chown=node:node index.js ./
+COPY --chown=node:node src ./src
 
 ENV HOST=0.0.0.0 \
     PORT=3001
