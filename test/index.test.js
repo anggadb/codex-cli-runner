@@ -227,3 +227,35 @@ test("protects and resolves approval endpoints", async () => {
     resolved: true,
   });
 });
+
+test("requires authentication and clears JSON logs", async () => {
+  let clearCount = 0;
+  const app = createTestApp({
+    logsSecret: "logs-secret",
+    clearLogs: async () => {
+      clearCount += 1;
+      return { deleted: 3 };
+    },
+  });
+
+  const unauthorized = await request(app, "/logs", { method: "DELETE" });
+  assert.deepEqual(unauthorized, { status: 401, body: { error: "Unauthorized" } });
+  assert.equal(clearCount, 0);
+
+  const cleared = await request(app, "/logs", {
+    method: "DELETE",
+    headers: { "X-Logs-Secret": "logs-secret" },
+  });
+  assert.deepEqual(cleared, { status: 200, body: { success: true, deleted: 3 } });
+  assert.equal(clearCount, 1);
+});
+
+test("disables log deletion when no endpoint secret is configured", async () => {
+  const response = await request(createTestApp({ logsSecret: "" }), "/logs", {
+    method: "DELETE",
+  });
+  assert.deepEqual(response, {
+    status: 503,
+    body: { error: "Endpoint secret is not configured" },
+  });
+});

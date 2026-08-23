@@ -108,6 +108,15 @@ Every completed Codex turn writes a separate JSON file to `logs/`. Each entry co
 
 The `logs/` directory is ignored by Git. Docker Compose mounts the same host directory at `/app/logs`, so container logs persist locally without being included in the image or repository.
 
+To clear all JSON execution logs from another trusted service on the local network:
+
+```bash
+curl -X DELETE http://127.0.0.1:3001/logs \\
+  -H "X-Logs-Secret: replace-with-a-different-long-random-secret"
+```
+
+Set `LOGS_API_SECRET` to a long random value. If it is omitted, the runner falls back to `APPROVAL_SECRET`; if neither is configured, the endpoint is disabled. The endpoint deletes only regular `.json` files directly inside `logs/` and returns the number deleted.
+
 ## API
 
 ### `POST /codex`

@@ -14,6 +14,7 @@ export function getRuntimeConfig(env = process.env) {
     host: env.HOST || "127.0.0.1",
     port: Number(env.PORT || 3001),
     approvalSecret: env.APPROVAL_SECRET || "",
+    logsSecret: env.LOGS_API_SECRET || env.APPROVAL_SECRET || "",
   };
 }
 

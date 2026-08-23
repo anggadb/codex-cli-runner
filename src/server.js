@@ -3,7 +3,7 @@ import { getCodexConfig, getProjectMap, getRuntimeConfig } from "./config.js";
 import { createApp } from "./http/create-app.js";
 
 export function startServer({ env = process.env, codexServer } = {}) {
-  const { host, port } = getRuntimeConfig(env);
+  const { host, port, logsSecret } = getRuntimeConfig(env);
   const appServer = codexServer ?? new CodexAppServer(getCodexConfig(env));
 
   appServer.start().catch((error) => {
@@ -14,6 +14,7 @@ export function startServer({ env = process.env, codexServer } = {}) {
     projectMap: getProjectMap(env.PROJECTS_JSON),
     codexServer: appServer,
     approvalSecret: env.APPROVAL_SECRET || "",
+    logsSecret,
   });
   const server = app.listen(port, host, () => {
     console.log(`Codex runner listening on http://${host}:${port}`);

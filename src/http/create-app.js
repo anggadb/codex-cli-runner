@@ -3,15 +3,17 @@ import { existsSync } from "node:fs";
 
 import { CodexAppServer } from "../codex/app-server.js";
 import { DEFAULT_PROJECTS } from "../config.js";
-import { writeCodexLog } from "../logger.js";
+import { clearCodexLogs, writeCodexLog } from "../logger.js";
 
 export function createApp({
   projectMap = DEFAULT_PROJECTS,
   directoryExists = existsSync,
   logResponse = writeCodexLog,
+  clearLogs = clearCodexLogs,
   clock = Date.now,
   codexServer = new CodexAppServer({ clock }),
   approvalSecret = process.env.APPROVAL_SECRET || "",
+  logsSecret = process.env.LOGS_API_SECRET || process.env.APPROVAL_SECRET || "",
 } = {}) {
   const app = express();
   app.use(express.json());
@@ -44,6 +46,15 @@ export function createApp({
       }
     }
   );
+
+  app.delete("/logs", requireConfiguredSecret(logsSecret, "X-Logs-Secret"), async (_req, res) => {
+    try {
+      const result = await clearLogs();
+      res.json({ success: true, ...result });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
 
   app.post("/codex", async (req, res) => {
     const { project, task } = req.body;
@@ -85,6 +96,18 @@ export function createApp({
 export function requireApprovalSecret(secret) {
   return (req, res, next) => {
     if (secret && req.get("X-Approval-Secret") !== secret) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    next();
+  };
+}
+
+export function requireConfiguredSecret(secret, headerName) {
+  return (req, res, next) => {
+    if (!secret) {
+      return res.status(503).json({ error: "Endpoint secret is not configured" });
+    }
+    if (req.get(headerName) !== secret) {
       return res.status(401).json({ error: "Unauthorized" });
     }
     next();
